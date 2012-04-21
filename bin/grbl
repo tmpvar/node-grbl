@@ -5,15 +5,18 @@ var
   SerialPort    = require('serialport').SerialPort,
   parsers       = require('serialport').parsers,
   glob          = require('glob'),
-  hook          = null, //new Hook({ name : 'grbl', debug : true });
+  hook          = new Hook({
+    name : 'grbl',
+    debug : true,
+    ignoreSTDIN : true
+  });
   repl          = require('repl'),
   argv          = require('optimist').argv,
   colors        = require('colors'),
   vm            = require('vm'),
   EventEmitter  = require('events').EventEmitter,
   evalEmitter   = new EventEmitter(),
-  dodgePrompt   = false,
-  dodgeHistory  = false,
+  gcodeQueue    = {},
   gcode         = global.G = global.gcode = function() {
     var args = [];
     Array.prototype.push.apply(args, arguments);
@@ -85,7 +88,6 @@ var disconnected = function(reconnectFn) {
       }
     });
   })();
-
 };
 
 
@@ -159,17 +161,12 @@ module.exports = function() {
               } catch (e) {
                 err = e;
               }
-              if (!dodgePrompt) {
-                fn(err, result);
-              } else {
-                dodgePrompt = false;
-              }
+              fn(err, result);
             }
           }
         }, true, true);
       }
-    })
-
+    });
   });
 };
 
@@ -236,5 +233,64 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
     }
   });
 };
+
+/*
+  incoming gcode is expected to be in the form:
+
+  {
+    "name" : "cube.gcode",
+    "gcode" : [
+      "G1 X0",
+      "G1 X100 Z-90"
+    ]
+  }
+
+*/
+
+hook.on('*::gcode', function(data) {
+  // We do two things here:
+  // 1) add this gcode into a queue
+  // 2) if a repl has already been started, kick off the process
+
+  gcodeQueue[data.name] = data.gcode;
+
+  // Repl has been started and we are currently connected to the
+  // arduino
+  if (repl.repl && currentSP) {
+    (function next(i) {
+      if (i>=data.gcode.length) {
+        hook.emit('progress', { current : i, total : i });
+
+        // print done and return to prompt
+        console.log('DONE!'.yellow);
+        repl.repl.displayPrompt();
+        return;
+      }
+      var line = data.gcode[i];
+
+      console.log(line.bold.green);
+      currentSP.on('data', function waitForOk(response) {
+        if (response.indexOf('ok') > -1) {
+          currentSP.removeListener('data', waitForOk);
+
+          hook.emit('progress', {
+            current : i,
+            total : data.gcode.length
+          });
+
+          next(i+1);
+        }
+      });
+
+      currentSP.write(line + "\n");
+
+    })(0);
+    data.gcode.forEach(function(line) {
+
+    });
+  }
+});
+
+hook.start()
 
 module.exports();
