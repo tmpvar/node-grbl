@@ -1,7 +1,7 @@
 {
   "author": "Elijah Insua <tmpvar@gmail.com> (http://tmpvar.com)",
-  "name": "hookio-grbl",
-  "description": "connection between hookio and grbl",
+  "name": "grbl",
+  "description": "grbl repl + binding to hook.io",
   "version": "0.0.1",
   "repository": {
     "type": "git",

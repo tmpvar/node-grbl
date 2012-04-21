@@ -1,0 +1,240 @@
+#!/usr/bin/env node
+
+var
+  Hook          = require('hook.io').Hook,
+  SerialPort    = require('serialport').SerialPort,
+  parsers       = require('serialport').parsers,
+  glob          = require('glob'),
+  hook          = null, //new Hook({ name : 'grbl', debug : true });
+  repl          = require('repl'),
+  argv          = require('optimist').argv,
+  colors        = require('colors'),
+  vm            = require('vm'),
+  EventEmitter  = require('events').EventEmitter,
+  evalEmitter   = new EventEmitter(),
+  dodgePrompt   = false,
+  dodgeHistory  = false,
+  gcode         = global.G = global.gcode = function() {
+    var args = [];
+    Array.prototype.push.apply(args, arguments);
+    console.log(('G' + args.join(' ')).bold.yellow);
+    repl.repl.rli.history.pop();
+    repl.repl.rli.emit('line', ('G' + args.join(' ')));
+  },
+  commands      = {
+    record : (function() {
+      var recorded = {};
+
+      return function(name, fn) {
+
+        if (!fn || name.replace(/\W'/) === '') {
+          return (fn || name)(new Error('please provide a name: `record <name>`'));
+        }
+
+        commands.play = function(name, fn) {
+
+          if (!recorded[name]) {
+            fn(new Error("recording '" + name + "' was not found".bold.red));
+          } else {
+            recorded[name].forEach(function(command) {
+              console.log(command.green);
+              repl.repl.rli.emit('line', command + '\n');
+            });
+            fn();
+          }
+        }
+
+        console.log('recording commands into "' + name.green + '"');
+        repl.repl.prompt = "grbl:" + name + "> ";
+        repl.repl.displayPrompt();
+        recorded[name] = [];
+        var recordCommands = function(data) {
+          recorded[name].push(data.command);
+        };
+        evalEmitter.on('command', recordCommands);
+        commands.stop = function(fn) {
+          repl.repl.prompt = "grbl> ";
+          delete commands['stop'];
+          recorded[name].pop(); // clean the stop command off of the command list
+          evalEmitter.removeListener('command', recordCommands);
+          fn(null, 'done recording');
+        };
+      }
+    })(),
+  };
+
+var connected = false, currentSP;
+
+var disconnected = function(reconnectFn) {
+  process.stdout.write('\nnot connected'.bold.red);
+  connected = false;
+  (function attemptReconnect() {
+
+    process.stdout.write('.'.red);
+    findSerialPort({}, function(err, sp) {
+      if (err) {
+
+        setTimeout(function() {
+          attemptReconnect(reconnectFn);
+        }, 200);
+      } else {
+        connected = true;
+        console.log('\nconnected!'.bold.green + '\n');
+        currentSP = sp;
+        reconnectFn();
+      }
+    });
+  })();
+
+};
+
+
+module.exports = function() {
+  var reconnecting = false;
+  findSerialPort({}, function initialize(err, sp) {
+
+    if (err) {
+      reconnecting = true;
+      disconnected(initialize)
+      return;
+    }
+
+    // avoid double 'connected' messages
+    if (!reconnecting) {
+      console.log('connected!'.bold.green);
+    }
+    ran = true;
+
+    if (!currentSP) {
+      currentSP = sp;
+    }
+
+    currentSP.on('data', function grblHeader(data) {
+      if (data.indexOf("'$' to dump current settings") > -1) {
+
+        currentSP.removeListener('data', grblHeader);
+
+        repl.start('grbl> ', null, function evil(cmd, r, name, fn) {
+          if (currentSP) {
+            strippedCmd = cmd.replace(/^\(|\)$/g, '');
+
+            evalEmitter.emit('command', {
+              rawCommand  : cmd,
+              command     : strippedCmd
+            });
+
+            // guard against noops
+            if (strippedCmd.replace(/\W/,'') === "") {
+              return;
+            }
+
+            var commandParts = strippedCmd.replace('\n', '').split(' ');
+            var command = commandParts[0].replace(/\W/,'');
+
+            // Handle custom commands
+            if (commands[command]) {
+              var args = commandParts.slice(1);
+              args.push(function(err, text) {
+                if (err) {
+                  console.log((err.message || err).bold.red);
+                } else {
+                  console.log(text);
+                }
+                repl.repl.displayPrompt();
+              });
+              commands[command].apply(repl, args || []);
+
+            // Handle GCODE
+            } else if (strippedCmd.match(/^[a-z][0-9][0-9]?/i) || strippedCmd.replace(/[ \n]*/g, '').match(/^[\?\$]/)) {
+              repl.repl.outputStream.write('\n');
+              currentSP.write(strippedCmd);
+
+              // TODO: transmit to hookio
+
+            // Handle javascript
+            } else {
+              var err, result;
+              try {
+                result = vm.runInThisContext(cmd, 'grbl repl');
+              } catch (e) {
+                err = e;
+              }
+              if (!dodgePrompt) {
+                fn(err, result);
+              } else {
+                dodgePrompt = false;
+              }
+            }
+          }
+        }, true, true);
+      }
+    })
+
+  });
+};
+
+var findSerialPort = module.exports.findSerialPort = function(options, fn) {
+  var found = false;
+  // Find serialport
+  glob('/dev/tty.usb*', function(e, matches) {
+    matches.forEach(function(v) {
+      if (!found) {
+        // TODO: actually query the port for 'grbl' string
+        // TODO: consider the problems this may cause if connecting to a running
+        //       machine.
+        var sp = new SerialPort(v, {
+            parser: parsers.readline("\n")
+        });
+
+        sp.on('error', function(error) {
+          console.log('here');
+        });
+
+        sp.on('end', function() {
+          disconnected(function() {})
+        });
+
+        sp.on('data', function(data) {
+          if (!data) { return; }
+          var matches = data.match(/(error|ok|\$)/i);
+          if (matches) {
+            var color;
+            switch (matches[0]) {
+              case 'ok':
+                color = 'green';
+              break;
+
+              case 'error':
+                color = 'red';
+              break;
+
+              case '$':
+                color = 'yellow';
+              break;
+            }
+            console.log(data[color] || data);
+
+            if (matches[0] === 'ok' || matches[0] === 'error' || data.substring(0,3) === "'$'") {
+              console.log('');
+              if (repl.repl) {
+                repl.repl.displayPrompt();
+              }
+            }
+
+          } else {
+            console.log(data);
+          }
+        });
+
+        found = true;
+        fn(null, sp);
+      }
+    });
+
+    if (!found) {
+      fn(new Error('not found'));
+    }
+  });
+};
+
+module.exports();
