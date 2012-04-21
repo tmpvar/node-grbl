@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tmpvar/hookio-grbl.git"
+    "url": "https://github.com/tmpvar/node-grbl.git"
   },
   "dependencies": {
     "serialport": "https://github.com/tmpvar/node-serialport/tarball/master",
@@ -13,6 +13,9 @@
     "glob": "~3.1.9",
     "optimist": "~0.3.1",
     "colors": "~0.6.0-1"
+  },
+  "bin" : {
+    "grbl" : "./bin/grbl"
   },
   "devDependencies": {},
   "optionalDependencies": {},
