@@ -10,7 +10,7 @@ var
     debug : false,
     ignoreSTDIN : true,
     silent : true
-  });
+  }),
   repl          = require('repl'),
   argv          = require('optimist').argv,
   colors        = require('colors'),
@@ -46,7 +46,7 @@ var
             });
             fn();
           }
-        }
+        };
 
         console.log('recording commands into "' + name.green + '"');
         repl.repl.prompt = "grbl:" + name + "> ";
@@ -58,12 +58,12 @@ var
         evalEmitter.on('command', recordCommands);
         commands.stop = function(fn) {
           repl.repl.prompt = "grbl> ";
-          delete commands['stop'];
+          delete commands.stop;
           recorded[name].pop(); // clean the stop command off of the command list
           evalEmitter.removeListener('command', recordCommands);
           fn(null, 'done recording');
         };
-      }
+      };
     })(),
   };
 
@@ -98,7 +98,7 @@ module.exports = function() {
 
     if (err) {
       reconnecting = true;
-      disconnected(initialize)
+      disconnected(initialize);
       return;
     }
 
@@ -106,7 +106,6 @@ module.exports = function() {
     if (!reconnecting) {
       console.log('connected!'.bold.green);
     }
-    ran = true;
 
     if (!currentSP) {
       currentSP = sp;
@@ -119,7 +118,7 @@ module.exports = function() {
 
         repl.start('grbl> ', null, function evil(cmd, r, name, fn) {
           if (currentSP) {
-            strippedCmd = cmd.replace(/^\(|\)$/g, '');
+            var strippedCmd = cmd.replace(/^\(|\)$/g, '');
 
             evalEmitter.emit('command', {
               rawCommand  : cmd,
@@ -189,7 +188,7 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
         });
 
         sp.on('end', function() {
-          disconnected(function() {})
+          disconnected(function() {});
         });
 
         sp.on('data', function(data) {
@@ -294,6 +293,6 @@ hook.on('*::gcode', function(data) {
   }
 });
 
-hook.start()
+hook.start();
 
 module.exports();
