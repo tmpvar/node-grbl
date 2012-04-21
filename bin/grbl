@@ -7,8 +7,9 @@ var
   glob          = require('glob'),
   hook          = new Hook({
     name : 'grbl',
-    debug : true,
-    ignoreSTDIN : true
+    debug : false,
+    ignoreSTDIN : true,
+    silent : true
   });
   repl          = require('repl'),
   argv          = require('optimist').argv,
@@ -258,8 +259,13 @@ hook.on('*::gcode', function(data) {
   // arduino
   if (repl.repl && currentSP) {
     (function next(i) {
+
+      // TODO: handle disconnection in the middle of this process
+      //       probably for safety the buffer should be cleared.
+
       if (i>=data.gcode.length) {
         hook.emit('progress', { current : i, total : i });
+        hook.emit('complete', { current : i, total : i });
 
         // print done and return to prompt
         console.log('DONE!'.yellow);
@@ -285,9 +291,6 @@ hook.on('*::gcode', function(data) {
       currentSP.write(line + "\n");
 
     })(0);
-    data.gcode.forEach(function(line) {
-
-    });
   }
 });
 
