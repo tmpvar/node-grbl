@@ -12,10 +12,11 @@
     "hook.io": "~0.8.9",
     "glob": "~3.1.9",
     "optimist": "~0.3.1",
-    "colors": "~0.6.0-1"
+    "colors": "~0.6.0-1",
+    "async": "~0.1.22"
   },
-  "bin" : {
-    "grbl" : "./bin/grbl"
+  "bin": {
+    "grbl": "./bin/grbl"
   },
   "devDependencies": {},
   "optionalDependencies": {},

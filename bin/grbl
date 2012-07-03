@@ -5,6 +5,7 @@ var
   SerialPort    = require('serialport').SerialPort,
   parsers       = require('serialport').parsers,
   glob          = require('glob'),
+  async         = require('async'),
   hook          = new Hook({
     name : 'grbl',
     debug : false,
@@ -174,7 +175,7 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
   var found = false;
   // Find serialport
   glob('/dev/tty.usb*', function(e, matches) {
-    matches.forEach(function(v) {
+    async.forEach(matches, function(v, collect) {
       if (!found) {
         // TODO: actually query the port for 'grbl' string
         // TODO: consider the problems this may cause if connecting to a running
@@ -191,8 +192,26 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
           disconnected(function() {});
         });
 
+        var headerData = '';
         sp.on('data', function(data) {
-          if (!data) { return; }
+
+
+
+          if (!found) {
+            headerData+=data.toString();
+            if (headerData.length > 6) {
+              if (headerData.toLowerCase().indexOf('grbl') > -1) {
+                found = true;
+                return collect(sp);
+              } else {
+                found = false;
+                sp.close();
+                return collect()
+              }
+            }
+          }
+
+          if (!data || !found) { return; }
           var matches = data.match(/(error|ok|\$)/i);
           if (matches) {
             var color;
@@ -222,15 +241,15 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
             console.log(data);
           }
         });
-
-        found = true;
+      }
+    }, function(sp) {
+      if (!sp) {
+        fn(new Error('not found'));
+      } else {
         fn(null, sp);
       }
-    });
 
-    if (!found) {
-      fn(new Error('not found'));
-    }
+    });
   });
 };
 
@@ -247,7 +266,8 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
 
 */
 
-hook.on('*::gcode', function(data) {
+hook.on('**::gcode', function(data) {
+
   // We do two things here:
   // 1) add this gcode into a queue
   // 2) if a repl has already been started, kick off the process
