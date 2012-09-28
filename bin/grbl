@@ -6,6 +6,7 @@ var
   parsers       = require('serialport').parsers,
   glob          = require('glob'),
   async         = require('async'),
+  exec          = require('child_process').exec,
   hook          = new Hook({
     name : 'grbl',
     debug : false,
@@ -26,7 +27,56 @@ var
     repl.repl.rli.history.pop();
     repl.repl.rli.emit('line', ('G' + args.join(' ')));
   },
+  after = function(fn) {
+    setTimeout(fn, 0);
+  },
   commands      = {
+    paste : function(fn) {
+      exec('pbpaste', function(err, out) {
+        var lines = out.split('\n'), pending = 0, done = false;
+
+        var spDataEvents = currentSP._events.data
+        delete currentSP._events.data;
+
+        var next = function() {
+          if (done) { return; }
+
+          if (lines.length === 0 && pending === 0) {
+            console.log('done'.green);
+            currentSP.removeListener('data', handleSpData);
+
+            currentSP._events.data = spDataEvents;
+
+            done = true;
+            return fn();
+          }
+
+          var line = lines.shift();
+          if (!line) {
+            return after(next);
+          }
+
+          pending++;
+          currentSP.write(line + '\n');
+          process.stdout.write('.');
+
+          if (pending < 2 && lines.length > 0) {
+            return after(next);
+          }
+        };
+
+        var handleSpData = function(d) {
+          if (d.indexOf('ok') > -1) {
+            pending--;
+            return after(next);
+          }
+        };
+
+        currentSP.on('data', handleSpData);
+
+        return after(next);
+      });
+    },
     record : (function() {
       var recorded = {};
 
@@ -112,12 +162,11 @@ module.exports = function() {
       currentSP = sp;
     }
 
-    currentSP.on('data', function grblHeader(data) {
+    currentSP.once('data', function grblHeader(data) {
       if (data.indexOf("'$' to dump current settings") > -1) {
 
-        currentSP.removeListener('data', grblHeader);
-
         repl.start('grbl> ', null, function evil(cmd, r, name, fn) {
+
           if (currentSP) {
             var strippedCmd = cmd.replace(/^\(|\)$/g, '');
 
@@ -136,15 +185,10 @@ module.exports = function() {
 
             // Handle custom commands
             if (commands[command]) {
-              var args = commandParts.slice(1);
-              args.push(function(err, text) {
-                if (err) {
-                  console.log((err.message || err).bold.red);
-                } else {
-                  console.log(text);
-                }
+              args=[function() {
                 repl.repl.displayPrompt();
-              });
+              }];
+
               commands[command].apply(repl, args || []);
 
             // Handle GCODE
@@ -196,7 +240,6 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
         sp.on('data', function(data) {
 
 
-
           if (!found) {
             headerData+=data.toString();
             if (headerData.length > 6) {
@@ -210,6 +253,7 @@ var findSerialPort = module.exports.findSerialPort = function(options, fn) {
               }
             }
           }
+
 
           if (!data || !found) { return; }
           var matches = data.match(/(error|ok|\$)/i);
