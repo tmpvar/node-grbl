@@ -1,362 +1,70 @@
-#!/usr/bin/env node
+var grbl = require('../'),
+    argv = require('optimist').argv,
+    colors = require('colors'),
+    repl = require('repl');
 
-var
-  Hook          = require('hook.io').Hook,
-  SerialPort    = require('serialport').SerialPort,
-  parsers       = require('serialport').parsers,
-  glob          = require('glob'),
-  async         = require('async'),
-  exec          = require('child_process').exec,
-  hook          = new Hook({
-    name : 'grbl',
-    debug : false,
-    ignoreSTDIN : true,
-    silent : true
-  }),
-  repl          = require('repl'),
-  argv          = require('optimist').argv,
-  colors        = require('colors'),
-  vm            = require('vm'),
-  EventEmitter  = require('events').EventEmitter,
-  evalEmitter   = new EventEmitter(),
-  gcodeQueue    = {},
-  gcode         = global.G = global.gcode = function() {
-    var args = [];
-    Array.prototype.push.apply(args, arguments);
-    console.log(('G' + args.join(' ')).bold.yellow);
-    repl.repl.rli.history.pop();
-    repl.repl.rli.emit('line', ('G' + args.join(' ')));
+var r = repl.start({
+  prompt: 'grbl> ',
+  eval : function evil(line, ctx, name, fn) {
+    r.disablePrompt = true
+    r.emit('command', line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,''));
+    fn(null);
+    r.disablePrompt = false
   },
-  after = function(fn) {
-    setTimeout(fn, 0);
-  },
-  commands      = {
-    paste : function(fn) {
-      exec('pbpaste', function(err, out) {
-        var lines = out.split('\n'), pending = 0, done = false;
-
-        var spDataEvents = currentSP._events.data
-        delete currentSP._events.data;
-
-        var next = function() {
-          if (done) { return; }
-
-          if (lines.length === 0 && pending === 0) {
-            console.log('done'.green);
-            currentSP.removeListener('data', handleSpData);
-
-            currentSP._events.data = spDataEvents;
-
-            done = true;
-            return fn();
-          }
-
-          var line = lines.shift();
-          if (!line) {
-            return after(next);
-          }
-
-          pending++;
-          currentSP.write(line + '\n');
-          process.stdout.write('.');
-
-          if (pending < 2 && lines.length > 0) {
-            return after(next);
-          }
-        };
-
-        var handleSpData = function(d) {
-          if (d.indexOf('ok') > -1) {
-            pending--;
-            return after(next);
-          }
-        };
-
-        currentSP.on('data', handleSpData);
-
-        return after(next);
-      });
-    },
-    record : (function() {
-      var recorded = {};
-
-      return function(name, fn) {
-
-        if (!fn || name.replace(/\W'/) === '') {
-          return (fn || name)(new Error('please provide a name: `record <name>`'));
-        }
-
-        commands.play = function(name, fn) {
-
-          if (!recorded[name]) {
-            fn(new Error("recording '" + name + "' was not found".bold.red));
-          } else {
-            recorded[name].forEach(function(command) {
-              console.log(command.green);
-              repl.repl.rli.emit('line', command + '\n');
-            });
-            fn();
-          }
-        };
-
-        console.log('recording commands into "' + name.green + '"');
-        repl.repl.prompt = "grbl:" + name + "> ";
-        repl.repl.displayPrompt();
-        recorded[name] = [];
-        var recordCommands = function(data) {
-          recorded[name].push(data.command);
-        };
-        evalEmitter.on('command', recordCommands);
-        commands.stop = function(fn) {
-          repl.repl.prompt = "grbl> ";
-          delete commands.stop;
-          recorded[name].pop(); // clean the stop command off of the command list
-          evalEmitter.removeListener('command', recordCommands);
-          fn(null, 'done recording');
-        };
-      };
-    })(),
-  };
-
-var connected = false, currentSP;
-
-var disconnected = function(reconnectFn) {
-  process.stdout.write('\nnot connected'.bold.red);
-  connected = false;
-  (function attemptReconnect() {
-
-    process.stdout.write('.'.red);
-    findSerialPort({}, function(err, sp) {
-      if (err) {
-
-        setTimeout(function() {
-          attemptReconnect(reconnectFn);
-        }, 200);
-      } else {
-        connected = true;
-        console.log('\nconnected!'.bold.green + '\n');
-        currentSP = sp;
-        reconnectFn();
-      }
-    });
-  })();
-};
-
-
-module.exports = function() {
-  var reconnecting = false;
-  findSerialPort({}, function initialize(err, sp) {
-
-    if (err) {
-      reconnecting = true;
-      disconnected(initialize);
-      return;
-    }
-
-    // avoid double 'connected' messages
-    if (!reconnecting) {
-      console.log('connected!'.bold.green);
-    }
-
-    if (!currentSP) {
-      currentSP = sp;
-    }
-
-    currentSP.once('data', function grblHeader(data) {
-      if (data.indexOf("'$' to dump current settings") > -1) {
-
-        repl.start('grbl> ', null, function evil(cmd, r, name, fn) {
-
-          if (currentSP) {
-            var strippedCmd = cmd.replace(/^\(|\)$/g, '');
-
-            evalEmitter.emit('command', {
-              rawCommand  : cmd,
-              command     : strippedCmd
-            });
-
-            // guard against noops
-            if (strippedCmd.replace(/\W/,'') === "") {
-              return;
-            }
-
-            var commandParts = strippedCmd.replace('\n', '').split(' ');
-            var command = commandParts[0].replace(/\W/,'');
-
-            // Handle custom commands
-            if (commands[command]) {
-              args=[function() {
-                repl.repl.displayPrompt();
-              }];
-
-              commands[command].apply(repl, args || []);
-
-            // Handle GCODE
-            } else if (strippedCmd.match(/^[a-z][0-9][0-9]?/i) || strippedCmd.replace(/[ \n]*/g, '').match(/^[\?\$]/)) {
-              repl.repl.outputStream.write('\n');
-              currentSP.write(strippedCmd);
-
-              // TODO: transmit to hookio
-
-            // Handle javascript
-            } else {
-              var err, result;
-              try {
-                result = vm.runInThisContext(cmd, 'grbl repl');
-              } catch (e) {
-                err = e;
-              }
-              fn(err, result);
-            }
-          }
-        }, true, true);
-      }
-    });
-  });
-};
-
-var findSerialPort = module.exports.findSerialPort = function(options, fn) {
-  var found = false;
-  // Find serialport
-  glob('/dev/tty.usb*', function(e, matches) {
-    async.forEach(matches, function(v, collect) {
-      if (!found) {
-        // TODO: actually query the port for 'grbl' string
-        // TODO: consider the problems this may cause if connecting to a running
-        //       machine.
-        var sp = new SerialPort(v, {
-            parser: parsers.readline("\n")
-        });
-
-        sp.on('error', function(error) {
-          console.log('here');
-        });
-
-        sp.on('end', function() {
-          disconnected(function() {});
-        });
-
-        var headerData = '';
-        sp.on('data', function(data) {
-
-
-          if (!found) {
-            headerData+=data.toString();
-            if (headerData.length > 6) {
-              if (headerData.toLowerCase().indexOf('grbl') > -1) {
-                found = true;
-                return collect(sp);
-              } else {
-                found = false;
-                sp.close();
-                return collect()
-              }
-            }
-          }
-
-
-          if (!data || !found) { return; }
-          var matches = data.match(/(error|ok|\$)/i);
-          if (matches) {
-            var color;
-            switch (matches[0]) {
-              case 'ok':
-                color = 'green';
-              break;
-
-              case 'error':
-                color = 'red';
-              break;
-
-              case '$':
-                color = 'yellow';
-              break;
-            }
-            console.log(data[color] || data);
-
-            if (matches[0] === 'ok' || matches[0] === 'error' || data.substring(0,3) === "'$'") {
-              console.log('');
-              if (repl.repl) {
-                repl.repl.displayPrompt();
-              }
-            }
-
-          } else {
-            console.log(data);
-          }
-        });
-      }
-    }, function(sp) {
-      if (!sp) {
-        fn(new Error('not found'));
-      } else {
-        fn(null, sp);
-      }
-
-    });
-  });
-};
-
-/*
-  incoming gcode is expected to be in the form:
-
-  {
-    "name" : "cube.gcode",
-    "gcode" : [
-      "G1 X0",
-      "G1 X100 Z-90"
-    ]
-  }
-
-*/
-
-hook.on('**::gcode', function(data) {
-
-  // We do two things here:
-  // 1) add this gcode into a queue
-  // 2) if a repl has already been started, kick off the process
-
-  gcodeQueue[data.name] = data.gcode;
-
-  // Repl has been started and we are currently connected to the
-  // arduino
-  if (repl.repl && currentSP) {
-    (function next(i) {
-
-      // TODO: handle disconnection in the middle of this process
-      //       probably for safety the buffer should be cleared.
-
-      if (i>=data.gcode.length) {
-        hook.emit('progress', { current : i, total : i });
-        hook.emit('complete', { current : i, total : i });
-
-        // print done and return to prompt
-        console.log('DONE!'.yellow);
-        repl.repl.displayPrompt();
-        return;
-      }
-      var line = data.gcode[i];
-
-      console.log(line.bold.green);
-      currentSP.on('data', function waitForOk(response) {
-        if (response.indexOf('ok') > -1) {
-          currentSP.removeListener('data', waitForOk);
-
-          hook.emit('progress', {
-            current : i,
-            total : data.gcode.length
-          });
-
-          next(i+1);
-        }
-      });
-
-      currentSP.write(line + "\n");
-
-    })(0);
-  }
+  terminal : true,
+  useGlobal : true,
+  ignoreUndefined : true
 });
 
-hook.start();
+(function(displayPrompt) {
 
-module.exports();
+  r.displayPrompt = function() {
+    if (r.disablePrompt) {
+      return;
+    }
+    displayPrompt.call(r);
+  };
+
+})(r.displayPrompt)
+grbl(function(machine) {
+
+  console.log('\nconnected!'.green);
+  r.displayPrompt();
+
+  r.on('command', function(line) {
+    machine.write(line.trim() + '\n');
+  });
+
+  var count = 0;
+  machine.on('line', function(data) {
+    var matches = data.match(/(error|ok|\$)/i), color;
+    if (matches) {
+      var color;
+      switch (matches[0]) {
+        case 'ok':
+          color = 'green';
+        break;
+
+        case 'error':
+          color = 'red';
+        break;
+
+        case '$':
+          color = 'yellow';
+        break;
+      }
+    }
+
+    if (color) {
+      console.log(data[color]);
+    } else {
+      console.log(data);
+    }
+    r.displayPrompt();
+  });
+
+  machine.on('close', function() {
+    console.log('disconnected..'.red);
+  });
+
+});
