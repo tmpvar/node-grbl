@@ -8,12 +8,9 @@
     "url": "https://github.com/tmpvar/node-grbl.git"
   },
   "dependencies": {
-    "serialport": "https://github.com/tmpvar/node-serialport/tarball/master",
-    "hook.io": "~0.8.9",
-    "glob": "~3.1.9",
+    "serialport": "1.0.8",
     "optimist": "~0.3.1",
-    "colors": "~0.6.0-1",
-    "async": "~0.1.22"
+    "colors": "~0.6.0-1"
   },
   "bin": {
     "grbl": "./bin/grbl"
