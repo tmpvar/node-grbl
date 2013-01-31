@@ -3,7 +3,7 @@ var spm = require('serialport-manager'),
 
 module.exports = function(fn) {
   spm(function(err, conn, devices) {
-    conn.setMaxListeners(3);
+    conn.setMaxListeners(0);
     var device = false;
 
     for (var i = 0, l = devices.length; i<l; i++) {
