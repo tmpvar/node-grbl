@@ -1,8 +1,8 @@
 {
   "author": "Elijah Insua <tmpvar@gmail.com> (http://tmpvar.com)",
   "name": "grbl",
-  "description": "grbl repl + bindings to hook.io",
-  "version": "0.0.6",
+  "description": "grbl repl / library",
+  "version": "0.0.7",
   "repository": {
     "type": "git",
     "url": "https://github.com/tmpvar/node-grbl.git"
@@ -10,7 +10,7 @@
   "dependencies": {
     "optimist": "~0.3.1",
     "colors": "~0.6.0-1",
-    "serialport-manager": "~0.1.4",
+    "serialport-manager": "~0.2.2",
     "split": "~0.1.2"
   },
   "main": "index.js",
@@ -18,7 +18,6 @@
     "grbl": "bin/grbl.js"
   },
   "devDependencies": {},
-  "optionalDependencies": {},
   "engines": {
     "node": "*"
   }

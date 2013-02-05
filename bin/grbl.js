@@ -1,37 +1,65 @@
 #!/usr/bin/env node
 
 var grbl = require('../'),
+    pkg = require('../package.json'),
     argv = require('optimist').argv,
     colors = require('colors'),
-    repl = require('repl');
+    repl = require('repl'),
+    r;
 
-var r = repl.start({
-  prompt: 'grbl> ',
-  eval : function evil(line, ctx, name, fn) {
-    r.disablePrompt = true
-    r.emit('command', line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,''));
-    fn(null);
-    r.disablePrompt = false
-  },
-  terminal : true,
-  useGlobal : true,
-  ignoreUndefined : true
-});
+console.log([
+'                        _/        _/   ',
+'     _/_/_/  _/  _/_/  _/_/_/    _/    ',
+'  _/    _/  _/_/      _/    _/  _/     ',
+' _/    _/  _/        _/    _/  _/      ',
+'  _/_/_/  _/        _/_/_/    _/       ',
+'     _/                                ',
+'_/_/                 repl v' + pkg.version].join('\n').grey)
 
-(function(displayPrompt) {
 
-  r.displayPrompt = function() {
-    if (r.disablePrompt) {
-      return;
-    }
-    displayPrompt.call(r);
-  };
+console.log('\nWaiting for serial connection..'.yellow);
 
-})(r.displayPrompt)
 grbl(function(machine) {
+  console.log(('connected! (v' + machine.info.version + ')').green);
 
-  console.log('\nconnected!'.green);
-  r.displayPrompt();
+  if (!r) {
+    r = repl.start({
+      prompt: 'grbl> ',
+      eval : function evil(line, ctx, name, fn) {
+        r.disablePrompt = true
+        r.emit('command', line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,''));
+        fn(null);
+        r.disablePrompt = false
+      },
+      terminal : true,
+      useGlobal : true,
+      ignoreUndefined : true
+    });
+
+    (function(displayPrompt) {
+
+      r.displayPrompt = function(change) {
+
+        if (typeof change !== 'undefined') {
+          r.disablePrompt = !change;
+        }
+
+        if (r.disablePrompt) {
+          return;
+        }
+        displayPrompt.call(r);
+      };
+
+    })(r.displayPrompt);
+
+    r.disablePrompt = true;
+  }
+
+  r.displayPrompt(true);
+
+  machine.on('end', function() {
+    r.removeAllListeners('command');
+  });
 
   r.on('command', function(line) {
     machine.write(line.trim() + '\n');
@@ -39,9 +67,9 @@ grbl(function(machine) {
 
   var count = 0;
   machine.on('line', function(data) {
-    var matches = data.match(/(error|ok|\$)/i), color;
+    var matches = data.match(/(error|ok|\$|<)/i), color;
     if (matches) {
-      var color;
+      var color, prompt = true;
       switch (matches[0]) {
         case 'ok':
           color = 'green';
@@ -53,6 +81,12 @@ grbl(function(machine) {
 
         case '$':
           color = 'yellow';
+          prompt = false;
+        break;
+
+        case '<':
+          color = "cyan";
+          prompt = false;
         break;
       }
     }
@@ -62,11 +96,11 @@ grbl(function(machine) {
     } else {
       console.log(data);
     }
-    r.displayPrompt();
+    r.displayPrompt(prompt);
   });
 
-  machine.on('close', function() {
-    console.log('disconnected..'.red);
+  machine.on('end', function() {
+    console.log('\ndisconnected..'.red);
+    r.displayPrompt(false);
   });
-
 });

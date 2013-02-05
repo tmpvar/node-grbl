@@ -2,39 +2,35 @@ var spm = require('serialport-manager'),
     split = require('split');
 
 module.exports = function(fn) {
-  spm(function(err, conn, devices) {
-    conn.setMaxListeners(0);
-    var device = false;
+  spm({ log: function() {} }, function(err, manager) {
 
-    for (var i = 0, l = devices.length; i<l; i++) {
-      device = devices[i];
-
-      if (device.signature.toLowerCase().indexOf('grbl') > -1) {
-        break;
-      }
-
-      device = false;
-    }
-
-    if (!device) {
-      conn.destroy();
-    } else {
-      conn.write(device.comName + '\n');
+    manager.on('device', function(device) {
       var buf = '';
-      conn.on('data', function(d) {
 
-        buf += d.toString();
+      if (device.info.signature.toLowerCase().indexOf('grbl') > -1) {
+        device.connect(function(err, stream) {
+          if (err) {
+            throw err;
+          }
 
-        var parts = buf.replace(/\r/g, '').split('\n');
-        buf = parts.pop();
+          stream.on('data', function(d) {
+            buf += d.toString();
 
-        parts.forEach(function(part) {
-          part = part.trim();
-          part && conn.emit('line', part);
+            var parts = buf.replace(/\r/g, '').split('\n');
+            buf = parts.pop();
+
+            parts.forEach(function(part) {
+              part = part.trim();
+              part && stream.emit('line', part);
+            });
+          });
+
+          device.info.version = device.info.signature.match(/ ([0-9]+\.[0-9\.a-z]+)/)[1];
+          stream.info = device.info;
+
+          fn(stream);
         });
-      });
-
-      fn(conn);
-    }
+      }
+    });
   });
 };
