@@ -5,6 +5,7 @@ var grbl = require('../'),
     argv = require('optimist').argv,
     colors = require('colors'),
     repl = require('repl'),
+    split = require('split'),
     r;
 
 console.log([
@@ -20,7 +21,74 @@ console.log([
 console.log('\nWaiting for serial connection..'.yellow);
 
 grbl(function(machine) {
+
   console.log(('connected! (v' + machine.info.version + ')').green);
+
+  // Stream to the machine from stdin
+  if (argv.i) {
+    var lines = [], start = Date.now(), started = false, end = false, currentCommand = null;
+
+    var nextLine = function() {
+      if (lines.length === 0) {
+        if (end) {
+          var timer = null;
+          machine.pipe(split()).on('data', function(status) {
+            if (status[0] === '<') {
+              clearTimeout(timer);
+              if (status.toLowerCase().indexOf('idle') > -1) {
+                console.log('done in', (Date.now()-start)/1000, 'seconds');
+                machine.destroy();
+                process.exit();
+              } else {
+                setTimeout(function statusTick() {
+                  machine.write('?')
+                }, 100);
+              }
+            }
+          });
+
+          machine.write('?')
+        } else {
+          setTimeout(nextLine, 10);
+        }
+
+
+        return;
+      }
+
+      var line = lines.shift();
+      currentCommand = line;
+      machine.write(line + '\n');
+
+    };
+
+    machine.pipe(split()).on('data', function(d) {
+
+      if (d.indexOf('ok') > -1) {
+        console.log(currentCommand.grey,'->'.grey, d.yellow)
+        nextLine();
+      }
+    });
+
+    process.stdin.pipe(split()).on('data', function(line) {
+      // TODO: discard invalid gcode
+      lines.push(line);
+      if (!started) {
+        started = true;
+        nextLine();
+      }
+    });
+
+    process.stdin.on('end', function() {
+      end = true;
+    });
+
+    process.stdin.resume();
+
+    return;
+  }
+
+
 
   if (!r) {
     r = repl.start({
