@@ -23,6 +23,10 @@ module.exports = function(options, fn) {
             stream.write('?');
           }, 100);
 
+          stream.on('end', function() {
+            clearInterval(statusTimer);
+          });
+
           stream.on('data', function(d) {
             buf += d.toString();
 
