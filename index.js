@@ -1,8 +1,14 @@
 var spm = require('serialport-manager'),
     split = require('split');
 
-module.exports = function(fn) {
-  spm({ log: function() {} }, function(err, manager) {
+module.exports = function(options, fn) {
+
+  if (typeof options === 'function' && !fn) {
+    fn = options;
+    options = {};
+  }
+
+  spm(options, function(err, manager) {
 
     manager.on('device', function(device) {
       var buf = '';
@@ -12,6 +18,10 @@ module.exports = function(fn) {
           if (err) {
             throw err;
           }
+
+          var statusTimer = setInterval(function() {
+            stream.write('?');
+          }, 100);
 
           stream.on('data', function(d) {
             buf += d.toString();

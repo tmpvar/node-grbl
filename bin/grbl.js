@@ -8,20 +8,26 @@ var grbl = require('../'),
     split = require('split'),
     r;
 
-console.log([
-'                        _/        _/   ',
-'     _/_/_/  _/  _/_/  _/_/_/    _/    ',
-'  _/    _/  _/_/      _/    _/  _/     ',
-' _/    _/  _/        _/    _/  _/      ',
-'  _/_/_/  _/        _/_/_/    _/       ',
-'     _/                                ',
-'_/_/                 repl v' + pkg.version].join('\n').grey)
-
+if (!argv.i) {
+  console.log([
+  '                        _/        _/   ',
+  '     _/_/_/  _/  _/_/  _/_/_/    _/    ',
+  '  _/    _/  _/_/      _/    _/  _/     ',
+  ' _/    _/  _/        _/    _/  _/      ',
+  '  _/_/_/  _/        _/_/_/    _/       ',
+  '     _/                                ',
+  '_/_/                 repl v' + pkg.version].join('\n').grey)
+}
 
 console.log('\nWaiting for serial connection..'.yellow);
 
-grbl(function(machine) {
+var options = {};
+if (argv.host) {
+  options.host = argv.host;
+}
 
+grbl(options, function(machine) {
+  var status = {};
   console.log(('connected! (v' + machine.info.version + ')').green);
 
   // Stream to the machine from stdin
@@ -39,20 +45,12 @@ grbl(function(machine) {
                 console.log('done in', (Date.now()-start)/1000, 'seconds');
                 machine.destroy();
                 process.exit();
-              } else {
-                setTimeout(function statusTick() {
-                  machine.write('?')
-                }, 100);
               }
             }
           });
-
-          machine.write('?')
         } else {
           setTimeout(nextLine, 10);
         }
-
-
         return;
       }
 
@@ -63,9 +61,9 @@ grbl(function(machine) {
     };
 
     machine.pipe(split()).on('data', function(d) {
-
-      if (d.indexOf('ok') > -1) {
+      if (d.indexOf('ok') > -1 && currentCommand) {
         console.log(currentCommand.grey,'->'.grey, d.yellow)
+        currentCommand = null;
         nextLine();
       }
     });
@@ -94,10 +92,29 @@ grbl(function(machine) {
     r = repl.start({
       prompt: 'grbl> ',
       eval : function evil(line, ctx, name, fn) {
-        r.disablePrompt = true
-        r.emit('command', line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,''));
-        fn(null);
-        r.disablePrompt = false
+        var clean = line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,'').trim();
+
+        // return machines current status
+        if (clean[0] === '?') {
+          console.log(status.status.toUpperCase().grey, 'Machine'.white + '('.grey + [
+              status.position.machine.x,
+              status.position.machine.y,
+              status.position.machine.z
+            ].join(', ').yellow + ')'.grey,
+             'Work'.white + '('.grey + [
+              status.position.work.x,
+              status.position.work.y,
+              status.position.work.z
+            ].join(', ').yellow + ')'.grey
+          );
+          r.disablePrompt = false
+          fn(null);
+        } else {
+          r.disablePrompt = true
+          r.emit('command', clean);
+          fn(null);
+          r.disablePrompt = false
+        }
       },
       terminal : true,
       useGlobal : true,
@@ -133,6 +150,10 @@ grbl(function(machine) {
     machine.write(line.trim() + '\n');
   });
 
+  r.on('exit', function() {
+    process.exit();
+  });
+
   var count = 0;
   machine.on('line', function(data) {
     var matches = data.match(/(error|ok|\$|<)/i), color;
@@ -153,8 +174,25 @@ grbl(function(machine) {
         break;
 
         case '<':
-          color = "cyan";
+          var parts = data.replace(/\<|\>/g, '').split(',');
+          status = {
+            raw : data,
+            status : parts.shift().toLowerCase(),
+            position: {
+              machine : {
+                x : parseFloat(parts.shift().replace(/^[a-z:]+/gi,'')).toFixed(3),
+                y : parseFloat(parts.shift()).toFixed(3),
+                z : parseFloat(parts.shift()).toFixed(3),
+              },
+              work : {
+                x : parseFloat(parts.shift().replace(/^[a-z:]+/gi,'')).toFixed(3),
+                y : parseFloat(parts.shift()).toFixed(3),
+                z : parseFloat(parts.shift()).toFixed(3),
+              }
+            }
+          };
           prompt = false;
+          return;
         break;
       }
     }
