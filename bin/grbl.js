@@ -6,6 +6,7 @@ var grbl = require('../'),
     colors = require('colors'),
     repl = require('repl'),
     split = require('split'),
+    skateboard = require('skateboard'),
     r;
 
 if (!argv.i) {
@@ -22,6 +23,15 @@ if (!argv.i) {
 console.log('\nWaiting for serial connection..'.yellow);
 
 grbl(argv, function(machine) {
+
+  skateboard({ port: 7007 }, function(stream) {
+    stream.on('data', function(d) {
+      console.log(data);
+    });
+
+    stream.pipe(machine).pipe(stream);
+  });
+
   var status = {};
   console.log(('connected! (v' + machine.info.version + ')').green);
 

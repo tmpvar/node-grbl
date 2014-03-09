@@ -25,8 +25,6 @@ module.exports = function(options, fn) {
 
         sp.removeListener('data', header);
 
-
-
         fn(sp);
       }
     });
