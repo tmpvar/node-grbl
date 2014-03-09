@@ -2,7 +2,7 @@
   "author": "Elijah Insua <tmpvar@gmail.com> (http://tmpvar.com)",
   "name": "grbl",
   "description": "grbl repl / library",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/tmpvar/node-grbl.git"
