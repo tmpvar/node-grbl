@@ -21,12 +21,7 @@ if (!argv.i) {
 
 console.log('\nWaiting for serial connection..'.yellow);
 
-var options = {};
-if (argv.host) {
-  options.host = argv.host;
-}
-
-grbl(options, function(machine) {
+grbl(argv, function(machine) {
   var status = {};
   console.log(('connected! (v' + machine.info.version + ')').green);
 
@@ -95,7 +90,7 @@ grbl(options, function(machine) {
         var clean = line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,'').trim();
 
         // return machines current status
-        if (clean[0] === '?') {
+        if (clean[0] === '?' && status.status) {
           console.log(status.status.toUpperCase().grey, 'Machine'.white + '('.grey + [
               status.position.machine.x,
               status.position.machine.y,
@@ -155,7 +150,7 @@ grbl(options, function(machine) {
   });
 
   var count = 0;
-  machine.on('line', function(data) {
+  machine.pipe(split()).on('data', function(data) {
     var matches = data.match(/(error|ok|\$|<)/i), color;
     if (matches) {
       var color, prompt = true;
