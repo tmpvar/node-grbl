@@ -13,6 +13,8 @@ module.exports = function(options, fn) {
   // connect to a known port
   if (options.p) {
     var sp = new serialport.SerialPort(options.p);
+    sp.end = function() {};
+
     var b = '';
     sp.on('data', function header(d) {
 

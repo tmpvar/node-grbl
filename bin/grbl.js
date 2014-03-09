@@ -22,14 +22,37 @@ if (!argv.i) {
 
 console.log('\nWaiting for serial connection..'.yellow);
 
+
 grbl(argv, function(machine) {
 
+  var skateLines = [], pending = false;
   skateboard({ port: 7007 }, function(stream) {
-    stream.on('data', function(d) {
-      console.log(data);
+
+    stream.pipe(split()).on('data', function(d) {
+      var d = d.trim();
+      if (d.length) {
+        d = d + '\n';
+
+        if (!pending) {
+          machine.write(d);
+          pending = true;
+        } else {
+          skateLines.push(d);
+        }
+      }
     });
 
-    stream.pipe(machine).pipe(stream);
+    machine.pipe(split()).on('data', function(data) {
+      if (data.trim() === 'ok') {
+        if (skateLines.length) {
+          machine.write(skateLines.shift());
+        } else {
+          pending = false;
+        }
+      }
+
+      stream.write(data.toString());
+    });
   });
 
   var status = {};
@@ -62,7 +85,6 @@ grbl(argv, function(machine) {
       var line = lines.shift();
       currentCommand = line;
       machine.write(line + '\n');
-
     };
 
     machine.pipe(split()).on('data', function(d) {
