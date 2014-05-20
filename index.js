@@ -37,7 +37,7 @@ module.exports = function(options, fn) {
       manager.on('device', function(device) {
         var buf = '';
 
-        if (device.info.signature.toLowerCase().indexOf('grbl') > -1) {
+        if (device.info && device.info.signature.toLowerCase().indexOf('grbl') > -1) {
           device.connect(function(err, stream) {
             if (err) {
               throw err;
