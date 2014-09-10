@@ -60,7 +60,7 @@ module.exports = function(options, fn) {
         });
         process.exit();
       } else {
-        options.p = arduinos[0].commName;
+        options.p = arduinos[0].comName;
         open(options, fn);
       }
     });
