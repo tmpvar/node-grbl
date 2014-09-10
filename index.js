@@ -1,7 +1,38 @@
-var spm = require('serialport-manager'),
-    split = require('split');
-
+var split = require('split');
 var serialport = require('serialport');
+var duplex = require('duplexer');
+var through = require('through');
+
+function open(options, fn) {
+  var sp = new serialport.SerialPort(options.p, {
+    baudrate: 115200,
+    parser: serialport.parsers.readline("\n")
+  });
+
+  sp.end = function() {};
+
+  sp.once('open', function() {
+    sp.once('data', function header(line) {
+      line = line.toString().trim();
+
+      if (!line) {
+        return sp.once('data', header);
+      }
+
+      var match = line.match(/grbl (\d*\.\d[^ ]*)/i);
+      if (match) {
+        sp.info = {
+          version : match[1]
+        };
+
+        fn(sp);
+      } else {
+        console.log("that arduino doesn't have grbl on it!");
+        process.exit();
+      }
+    });
+  });
+}
 
 module.exports = function(options, fn) {
 
@@ -12,52 +43,26 @@ module.exports = function(options, fn) {
 
   // connect to a known port
   if (options.p) {
-    var sp = new serialport.SerialPort(options.p);
-    sp.end = function() {};
-
-    var b = '';
-    sp.on('data', function header(d) {
-
-      b += d.toString();
-      var match = b.match(/grbl (\d*\.\d[^ ]*)/i);
-      if (match) {
-        sp.info = {
-          version : match[1]
-        };
-
-        sp.removeListener('data', header);
-
-        fn(sp);
-      }
-    });
+    open(options, fn);
   } else {
+    serialport.list(function(e, ports) {
+      if (e) {
+        throw e;
+      }
 
-    spm(options, function(err, manager) {
-
-      manager.on('device', function(device) {
-        var buf = '';
-
-        if (device.info && device.info.signature.toLowerCase().indexOf('grbl') > -1) {
-          device.connect(function(err, stream) {
-            if (err) {
-              throw err;
-            }
-
-            var statusTimer = setInterval(function() {
-              stream.write('?');
-            }, 100);
-
-            stream.on('end', function() {
-              clearInterval(statusTimer);
-            });
-
-            device.info.version = device.info.signature.match(/ ([0-9]+\.[0-9\.a-z]+)/)[1];
-            stream.info = device.info;
-
-            fn(stream);
-          });
-        }
+      var arduinos = ports.filter(function(port) {
+        return port.manufacturer.toLowerCase().indexOf('arduino') > -1;
       });
+
+      if (arduinos.length > 1) {
+        arduinos.forEach(function(arduino) {
+          console.log('grbl -p', arduino.comName);
+        });
+        process.exit();
+      } else {
+        options.p = arduinos[0].commName;
+        open(options, fn);
+      }
     });
   }
 };

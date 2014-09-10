@@ -8,12 +8,13 @@
     "url": "https://github.com/tmpvar/node-grbl.git"
   },
   "dependencies": {
-    "optimist": "~0.3.1",
     "colors": "~0.6.0-1",
-    "serialport-manager": "~0.2.2",
-    "split": "~0.1.2",
+    "duplexer": "^0.1.1",
+    "optimist": "~0.3.1",
+    "serialport": "^1.4.6",
     "skateboard": "~0.2.6",
-    "serialport": "^1.4.0"
+    "split": "^0.3.0",
+    "through": "^2.3.4"
   },
   "main": "index.js",
   "bin": {

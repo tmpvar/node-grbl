@@ -18,10 +18,13 @@ if (!argv.i) {
   '  _/_/_/  _/        _/_/_/    _/       ',
   '     _/                                ',
   '_/_/                 repl v' + pkg.version].join('\n').grey)
+} else {
+  process.stdin.pause();
 }
 
 console.log('\nWaiting for serial connection..'.yellow);
 
+process.stdin.pause();
 
 grbl(argv, function(machine) {
 
@@ -42,7 +45,7 @@ grbl(argv, function(machine) {
       }
     });
 
-    machine.pipe(split()).on('data', function(data) {
+    machine.on('data', function(data) {
       if (data.trim() === 'ok') {
         if (skateLines.length) {
           machine.write(skateLines.shift());
@@ -60,38 +63,46 @@ grbl(argv, function(machine) {
 
   // Stream to the machine from stdin
   if (argv.i) {
+
     var lines = [], start = Date.now(), started = false, end = false, currentCommand = null;
 
-    var nextLine = function() {
-      if (lines.length === 0) {
-        if (end) {
-          var timer = null;
-          machine.pipe(split()).on('data', function(status) {
-            if (status[0] === '<') {
-              clearTimeout(timer);
-              if (status.toLowerCase().indexOf('idle') > -1) {
-                console.log('done in', (Date.now()-start)/1000, 'seconds');
-                machine.destroy();
-                process.exit();
-              }
-            }
-          });
-        } else {
-          setTimeout(nextLine, 10);
-        }
-        return;
+    var doneTimer = null;
+    var writeLine = function() {
+
+      if (doneTimer) {
+        clearTimeout(doneTimer);
       }
 
-      var line = lines.shift();
-      currentCommand = line;
-      machine.write(line + '\n');
-    };
+      if (lines.length) {
 
-    machine.pipe(split()).on('data', function(d) {
+        var line;
+        while (lines.length && (!line || !line.trim().length)) {
+          line = lines.shift();
+        }
+
+        currentCommand = line;
+        machine.write(line + '\n');
+      }
+
+      if (!lines.length && started && end) {
+
+        doneTimer = setTimeout(function tick() {
+
+          console.log('done in', (Date.now()-start)/1000, 'seconds');
+          machine.destroy();
+          process.exit();
+        }, 5000);
+      }
+    }
+
+    machine.on('data', function(d) {
+      d = d.trim();
       if (d.indexOf('ok') > -1 && currentCommand) {
-        console.log(currentCommand.grey,'->'.grey, d.yellow)
+        console.log(currentCommand.grey + '->'.grey + ' ' + d.yellow)
         currentCommand = null;
-        nextLine();
+        writeLine();
+      } else {
+        console.log(d.green);
       }
     });
 
@@ -100,7 +111,7 @@ grbl(argv, function(machine) {
       lines.push(line);
       if (!started) {
         started = true;
-        nextLine();
+        writeLine();
       }
     });
 
@@ -121,27 +132,10 @@ grbl(argv, function(machine) {
       eval : function evil(line, ctx, name, fn) {
         var clean = line.replace('/[\r\n]+/g', '').replace(/^\(|\)$/g,'').trim();
 
-        // return machines current status
-        if (clean[0] === '?' && status.status) {
-          console.log(status.status.toUpperCase().grey, 'Machine'.white + '('.grey + [
-              status.position.machine.x,
-              status.position.machine.y,
-              status.position.machine.z
-            ].join(', ').yellow + ')'.grey,
-             'Work'.white + '('.grey + [
-              status.position.work.x,
-              status.position.work.y,
-              status.position.work.z
-            ].join(', ').yellow + ')'.grey
-          );
-          r.disablePrompt = false
-          fn(null);
-        } else {
-          r.disablePrompt = true
-          r.emit('command', clean);
-          fn(null);
-          r.disablePrompt = false
-        }
+        r.disablePrompt = true
+        r.emit('command', clean);
+        fn(null);
+        r.disablePrompt = false
       },
       terminal : true,
       useGlobal : true,
@@ -174,7 +168,16 @@ grbl(argv, function(machine) {
   });
 
   r.on('command', function(line) {
-    machine.write(line.trim() + '\n');
+    console.log('command', line)
+    if (!line.length) {
+      return;
+    }
+
+    if (line === 'reset') {
+      machine.write(new Buffer([24]));
+    } else {
+      machine.write(line.trim() + '\n');
+    }
   });
 
   r.on('exit', function() {
@@ -182,7 +185,7 @@ grbl(argv, function(machine) {
   });
 
   var count = 0;
-  machine.pipe(split()).on('data', function(data) {
+  machine.on('data', function(data) {
     var matches = data.match(/(error|ok|\$|<)/i), color;
     if (matches) {
       var color, prompt = true;
@@ -218,6 +221,19 @@ grbl(argv, function(machine) {
               }
             }
           };
+
+          console.log(status.status.toUpperCase().grey, 'Machine'.white + '('.grey + [
+              status.position.machine.x,
+              status.position.machine.y,
+              status.position.machine.z
+            ].join(', ').yellow + ')'.grey,
+             'Work'.white + '('.grey + [
+              status.position.work.x,
+              status.position.work.y,
+              status.position.work.z
+            ].join(', ').yellow + ')'.grey
+          );
+
           prompt = false;
           return;
         break;
