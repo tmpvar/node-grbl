@@ -112,6 +112,11 @@ grbl(argv, function(machine) {
 
     process.stdin.pipe(split()).on('data', function(line) {
       // TODO: discard invalid gcode
+      if (['(', '%',].indexOf(line[0]) > -1) {
+        return;
+      }
+
+
       lines.push(line);
       if (!started) {
         started = true;
