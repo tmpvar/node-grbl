@@ -96,12 +96,17 @@ grbl(argv, function(machine) {
 
     machine.on('data', function(d) {
       d = d.trim();
+
       if (d.indexOf('ok') > -1 && currentCommand) {
-        console.log(currentCommand.grey + '->'.grey + ' ' + d.yellow)
+        console.log(currentCommand.grey + ' -> '.yellow + d.white)
         currentCommand = null;
         writeLine();
-      } else {
-        console.log(d.green);
+      } else if (d.indexOf('error') > -1) {
+        console.log(currentCommand.red + ' -> '.yellow + d.red);
+        currentCommand = null;
+        writeLine();
+      } else if (currentCommand) {
+        console.log(currentCommand.red + ' -> '.yellow + d.red);
       }
     });
 
