@@ -89,7 +89,6 @@ grbl(argv, function(machine) {
         doneTimer = setTimeout(function tick() {
 
           console.log('done in', (Date.now()-start)/1000, 'seconds');
-          machine.destroy();
           process.exit();
         }, 5000);
       }
