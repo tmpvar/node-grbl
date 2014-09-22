@@ -177,7 +177,6 @@ grbl(argv, function(machine) {
   });
 
   r.on('command', function(line) {
-    console.log('command', line)
     if (!line.length) {
       return;
     }
