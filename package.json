@@ -11,7 +11,7 @@
     "colors": "~0.6.0-1",
     "duplexer": "^0.1.1",
     "optimist": "~0.3.1",
-    "serialport": "^1.4.6",
+    "serialport": "^4.0.7",
     "skateboard": "~0.2.6",
     "split": "^0.3.0",
     "through": "^2.3.4"

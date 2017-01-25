@@ -1,18 +1,20 @@
 var split = require('split');
-var serialport = require('serialport');
+var SerialPort = require('serialport');
 var duplex = require('duplexer');
 var through = require('through');
 
 function open(options, fn) {
-  var sp = new serialport.SerialPort(options.p, {
-    baudrate: 115200,
-    parser: serialport.parsers.readline("\n")
+  var sp = new SerialPort(options.p, {
+    baudrate: 9600,
+    parser: SerialPort.parsers.readline("\n")
   });
 
   sp.end = function() {};
 
   sp.once('open', function() {
+    console.log('open')
     sp.once('data', function header(line) {
+      console.log('data', line)
       line = line.toString().trim();
 
       if (!line) {
@@ -45,13 +47,14 @@ module.exports = function(options, fn) {
   if (options.p) {
     open(options, fn);
   } else {
-    serialport.list(function(e, ports) {
+    SerialPort.list(function(e, ports) {
       if (e) {
         throw e;
       }
 
       var arduinos = ports.filter(function(port) {
-        return port.manufacturer.toLowerCase().indexOf('arduino') > -1;
+
+        return String(port.manufacturer).toLowerCase().indexOf('arduino') > -1;
       });
 
       if (arduinos.length > 1) {
